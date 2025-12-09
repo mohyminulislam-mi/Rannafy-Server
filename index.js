@@ -28,11 +28,13 @@ async function run() {
     await client.connect();
     const database = client.db("RannaFy");
     const usersCollection = database.collection("users");
+    const mealsCollection = database.collection("meals");
 
     // users data into Database
     app.post("/users", async (req, res) => {
       const user = req.body;
       user.role = "user";
+      user.userStatus = "active";
       user.createdAt = new Date();
 
       // exists user checking
@@ -41,8 +43,21 @@ async function run() {
         return res.send({ message: "User Exists" });
       }
       const result = await usersCollection.insertOne(user);
-      console.log('result', result);
-      
+      console.log("result", result);
+
+      res.send(result);
+    });
+    // get user from database
+    app.get("/users", async (req, res) => {
+      const email = req.body;
+      console.log("email", email);
+
+      const query = {};
+      if (email) {
+        query.email = email;
+      }
+      const cursor = usersCollection.find(query);
+      const result = await cursor.toArray();
       res.send(result);
     });
 
