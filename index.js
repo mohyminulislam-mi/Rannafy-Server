@@ -49,17 +49,34 @@ async function run() {
     });
     // get user from database
     app.get("/users", async (req, res) => {
-      const email = req.body;
+      const email = req.query.email;
       console.log("email", email);
-
       const query = {};
       if (email) {
         query.email = email;
       }
-      const cursor = usersCollection.find(query);
-      const result = await cursor.toArray();
-      res.send(result);
+      try {
+        const cursor = usersCollection.find(query);
+        const result = await cursor.toArray();
+        res.send(result);
+      } catch (error) {
+        res.send(error);
+      }
     });
+
+    // Meals data from MongoDB
+    app.get('meals', async(req, res) => {
+      const mealsProduct = req.req;
+      const query = {}
+      try {
+       const cursor = mealsCollectionCollection.find(query);
+        const result = await cursor.toArray();
+        res.send(result);
+      } catch (error) {
+        res.send(error);
+      }
+      
+    })
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
