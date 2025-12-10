@@ -2,7 +2,7 @@
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 // Create app
 const app = express();
@@ -65,18 +65,23 @@ async function run() {
     });
 
     // Meals data from MongoDB
-    app.get('meals', async(req, res) => {
-      const mealsProduct = req.req;
-      const query = {}
+    app.get("/meals", async (req, res) => {
+      const mealsProduct = req.query;
+      const query = {};
       try {
-       const cursor = mealsCollectionCollection.find(query);
+        const cursor = mealsCollection.find(query);
         const result = await cursor.toArray();
         res.send(result);
       } catch (error) {
         res.send(error);
       }
-      
-    })
+    });
+    app.get("/meals/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await mealsCollection.findOne(query);
+      res.send(result);
+    });
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
