@@ -76,7 +76,17 @@ async function run() {
         res.send(error);
       }
     });
-    app.get("/meals/:id", async (req, res) => {
+    // latest meals for home page
+    app.get("/latest-meals", async (req, res) => {
+      try {
+        const cursor = mealsCollection.find().limit(8);
+        const result = await cursor.toArray();
+        res.send(result);
+      } catch (error) {
+        res.send(error);
+      }
+    });
+    app.get("/meal-details/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await mealsCollection.findOne(query);
