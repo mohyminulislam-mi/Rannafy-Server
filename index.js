@@ -2,6 +2,7 @@
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
+const dayjs = require("dayjs");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 // Create app
@@ -29,13 +30,15 @@ async function run() {
     const database = client.db("RannaFy");
     const usersCollection = database.collection("users");
     const mealsCollection = database.collection("meals");
+    const reviewsCollection = database.collection("reviews");
 
     // users data into Database
     app.post("/users", async (req, res) => {
       const user = req.body;
       user.role = "user";
       user.userStatus = "active";
-      user.createdAt = new Date();
+      const formattedDate = dayjs().format("MMM D, YYYY h:mm A");
+      user.createdAt = formattedDate;
 
       // exists user checking
       const userExists = await usersCollection.findOne({ email: user.email });
@@ -90,6 +93,27 @@ async function run() {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await mealsCollection.findOne(query);
+      res.send(result);
+    });
+
+    // user reviews for single meals
+    app.post("/meals-reviews", async (req, res) => {
+      const { mealId, userName, userEmail, UserPhoto, text, rating } = req.body;
+
+      if (!mealId || !text || !rating) {
+        return res.status(400).send({ message: "Invalid review data" });
+      }
+      const formattedDate = dayjs().format("MMM D, YYYY h:mm A");
+      const UserReviews = {
+        mealId,
+        userName,
+        userEmail,
+        UserPhoto,
+        text,
+        rating,
+        createdAt: formattedDate,
+      };
+      const result = await reviewsCollection.insertOne(UserReviews);
       res.send(result);
     });
 
