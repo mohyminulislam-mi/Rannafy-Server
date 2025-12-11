@@ -30,15 +30,15 @@ async function run() {
     const database = client.db("RannaFy");
     const usersCollection = database.collection("users");
     const mealsCollection = database.collection("meals");
-    const reviewsCollection = database.collection("reviews");
+    const mealsReviewsCollection = database.collection("mealsReviews");
+    const favoritesCollection = database.collection("favorites");
 
     // users data into Database
     app.post("/users", async (req, res) => {
       const user = req.body;
       user.role = "user";
       user.userStatus = "active";
-      const formattedDate = dayjs().format("MMM D, YYYY h:mm A");
-      user.createdAt = formattedDate;
+      user.createdAt = new Date();
 
       // exists user checking
       const userExists = await usersCollection.findOne({ email: user.email });
@@ -97,23 +97,50 @@ async function run() {
     });
 
     // user reviews for single meals
+    // get reviews apis
+    app.get("/meals-reviews/:mealId", async (req, res) => {
+      const mealId = req.params.mealId;
+      const query = { mealId: new ObjectId(mealId) };
+      const cursor = mealsReviewsCollection.find(query).sort({ createdAt: -1 });
+      const result = await cursor.toArray();
+      res.send(result);
+    });
     app.post("/meals-reviews", async (req, res) => {
       const { mealId, userName, userEmail, UserPhoto, text, rating } = req.body;
 
       if (!mealId || !text || !rating) {
         return res.status(400).send({ message: "Invalid review data" });
       }
-      const formattedDate = dayjs().format("MMM D, YYYY h:mm A");
+      // const formattedDate = dayjs().format("MMM D, YYYY h:mm A");
+      // const formattedDate = dayjs().format("MMMM D, YYYY");
       const UserReviews = {
-        mealId,
+        mealId: new ObjectId(mealId),
         userName,
         userEmail,
         UserPhoto,
         text,
         rating,
-        createdAt: formattedDate,
+        createdAt: new Date(),
       };
-      const result = await reviewsCollection.insertOne(UserReviews);
+      const result = await mealsReviewsCollection.insertOne(UserReviews);
+      res.send(result);
+    });
+
+    app.get("/favorites", async (req, res) => {
+      const favorite = req.query;
+      const query = {};
+      const cursor = favoritesCollection.find(query).sort({ createdAt: -1 });
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    app.post("/favorites", async (req, res) => {
+      const favorite = req.body;
+      favorite.createdAt = new Date();
+      if (!favorite.mealId) {
+        return res.status(400).send({ message: "Invalid review data" });
+      }
+      const result = await favoritesCollection.insertOne(favorite);
       res.send(result);
     });
 
