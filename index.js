@@ -32,6 +32,7 @@ async function run() {
     const mealsCollection = database.collection("meals");
     const mealsReviewsCollection = database.collection("mealsReviews");
     const favoritesCollection = database.collection("favorites");
+    const ordersCollection = database.collection("orders");
 
     // users data into Database
     app.post("/users", async (req, res) => {
@@ -89,7 +90,7 @@ async function run() {
         res.send(error);
       }
     });
-    app.get("/meal-details/:id", async (req, res) => {
+    app.get("/meals/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await mealsCollection.findOne(query);
@@ -112,7 +113,6 @@ async function run() {
         return res.status(400).send({ message: "Invalid review data" });
       }
       // const formattedDate = dayjs().format("MMM D, YYYY h:mm A");
-      // const formattedDate = dayjs().format("MMMM D, YYYY");
       const UserReviews = {
         mealId: new ObjectId(mealId),
         userName,
@@ -137,10 +137,39 @@ async function run() {
     app.post("/favorites", async (req, res) => {
       const favorite = req.body;
       favorite.createdAt = new Date();
+      favorite.mealId = new ObjectId(favorite.mealId);
       if (!favorite.mealId) {
-        return res.status(400).send({ message: "Invalid review data" });
+        return res.status(400).send({ message: "Invalid favorite data" });
       }
+
+      //  check already in favorites
+      const favoriteExists = await favoritesCollection.findOne({
+        mealId: favorite.mealId,
+        userEmail: favorite.userEmail,
+      });
+
+      if (favoriteExists) {
+        return res.send({ message: "Already in favorites" });
+      }
+
       const result = await favoritesCollection.insertOne(favorite);
+      res.send({ message: "Added successfully", result });
+    });
+
+    // order data from UI
+    app.get("/dashboard/order/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = {};
+      const cursor = ordersCollection.find(query);
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+    // order data post data
+    app.post("/orders", async (req, res) => {
+      const orders = req.body;
+      orders.orderTime = new Date();
+      orders.orderStatus = "pending";
+      const result = await ordersCollection.insertOne(orders);
       res.send(result);
     });
 
