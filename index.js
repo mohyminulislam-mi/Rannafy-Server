@@ -33,8 +33,24 @@ async function run() {
     const mealsReviewsCollection = database.collection("mealsReviews");
     const favoritesCollection = database.collection("favorites");
     const ordersCollection = database.collection("orders");
+    const requestsCollection = database.collection("requests");
 
     // users data into Database
+    // get user from database
+    app.get("/users", async (req, res) => {
+      const email = req.query.email;
+      const query = {};
+      if (email) {
+        query.email = email;
+      }
+      try {
+        const cursor = usersCollection.find(query);
+        const result = await cursor.toArray();
+        res.send(result);
+      } catch (error) {
+        res.send(error);
+      }
+    });
     app.post("/users", async (req, res) => {
       const user = req.body;
       user.role = "user";
@@ -51,22 +67,34 @@ async function run() {
 
       res.send(result);
     });
-    // get user from database
-    app.get("/users", async (req, res) => {
-      const email = req.query.email;
-      console.log("email", email);
-      const query = {};
-      if (email) {
-        query.email = email;
-      }
+    // requests
+    app.post("/requests", async (req, res) => {
       try {
-        const cursor = usersCollection.find(query);
-        const result = await cursor.toArray();
-        res.send(result);
+        const request = req.body;
+
+        if (!request.userEmail || !request.requestType) {
+          return res.status(400).send({ message: "Invalid request data" });
+        }
+
+        const reqExists = await requestsCollection.findOne({
+          userEmail: request.userEmail,
+          requestType: request.requestType,
+        });
+
+        if (reqExists) {
+          return res.status(409).send({
+            message: "Already requested!",
+          });
+        }
+
+        const result = await requestsCollection.insertOne(request);
+        res.status(201).send(result);
       } catch (error) {
-        res.send(error);
+        res.status(500).send({ message: "Request failed" });
       }
     });
+    // patch request 
+    
 
     // Meals data from MongoDB
     app.get("/meals", async (req, res) => {
@@ -167,8 +195,12 @@ async function run() {
     // order data post data
     app.post("/orders", async (req, res) => {
       const orders = req.body;
+      console.log(orders);
+
+      orders.mealId = new ObjectId(orders.mealId);
       orders.orderTime = new Date();
       orders.orderStatus = "pending";
+      orders.paymentStatus = "pending";
       const result = await ordersCollection.insertOne(orders);
       res.send(result);
     });
