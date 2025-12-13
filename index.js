@@ -93,9 +93,16 @@ async function run() {
         res.status(500).send({ message: "Request failed" });
       }
     });
-    // patch request 
-    
-
+    // get request
+    app.get("/requests", async (req, res) => {
+      const { email } = req.query;
+      const query = {};
+      if (email) {
+        query.userEmail = email;
+      }
+      const result = await requestsCollection.find(query).toArray();
+      res.send(result);
+    });
     // Meals data from MongoDB
     app.get("/meals", async (req, res) => {
       const mealsProduct = req.query;
@@ -110,13 +117,9 @@ async function run() {
     });
     // latest meals for home page
     app.get("/latest-meals", async (req, res) => {
-      try {
-        const cursor = mealsCollection.find().limit(8);
-        const result = await cursor.toArray();
-        res.send(result);
-      } catch (error) {
-        res.send(error);
-      }
+      const cursor = mealsCollection.find().limit(8);
+      const result = await cursor.toArray();
+      res.send(result);
     });
     app.get("/meals/:id", async (req, res) => {
       const id = req.params.id;
@@ -124,7 +127,6 @@ async function run() {
       const result = await mealsCollection.findOne(query);
       res.send(result);
     });
-
     // user reviews for single meals
     // get reviews apis
     app.get("/meals-reviews/:mealId", async (req, res) => {
@@ -136,7 +138,6 @@ async function run() {
     });
     app.post("/meals-reviews", async (req, res) => {
       const { mealId, userName, userEmail, UserPhoto, text, rating } = req.body;
-
       if (!mealId || !text || !rating) {
         return res.status(400).send({ message: "Invalid review data" });
       }
@@ -153,7 +154,6 @@ async function run() {
       const result = await mealsReviewsCollection.insertOne(UserReviews);
       res.send(result);
     });
-
     app.get("/favorites", async (req, res) => {
       const favorite = req.query;
       const query = {};
@@ -161,7 +161,6 @@ async function run() {
       const result = await cursor.toArray();
       res.send(result);
     });
-
     app.post("/favorites", async (req, res) => {
       const favorite = req.body;
       favorite.createdAt = new Date();
@@ -183,9 +182,17 @@ async function run() {
       const result = await favoritesCollection.insertOne(favorite);
       res.send({ message: "Added successfully", result });
     });
-
     // order data from UI
-    app.get("/dashboard/order/:id", async (req, res) => {
+    app.get("/orders", async (req, res) => {
+      const { email } = req.query;
+      const query = {};
+      if (email) {
+        query.userEmail = email;
+      }
+      const result = await ordersCollection.find(query).toArray();
+      res.send(result);
+    });
+    app.get("/orders/:id", async (req, res) => {
       const id = req.params.id;
       const query = {};
       const cursor = ordersCollection.find(query);
