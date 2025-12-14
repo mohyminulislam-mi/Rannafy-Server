@@ -117,7 +117,7 @@ async function run() {
     });
     // latest meals for home page
     app.get("/latest-meals", async (req, res) => {
-      const cursor = mealsCollection.find().limit(8);
+      const cursor = mealsCollection.find().limit(8).sort({ createdAt: -1 });
       const result = await cursor.toArray();
       res.send(result);
     });
@@ -125,6 +125,12 @@ async function run() {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await mealsCollection.findOne(query);
+      res.send(result);
+    });
+    app.post("/meals", async (req, res) => {
+      const meal = req.body;
+      const result = await mealsCollection.insertOne(meal);
+      console.log("result", result);
       res.send(result);
     });
     // user reviews for single meals
@@ -136,14 +142,28 @@ async function run() {
       const result = await cursor.toArray();
       res.send(result);
     });
+    app.get("/meals-reviews", async (req, res) => {
+      const { email } = req.query;
+      const query = {};
+      if (email) {
+        query.userEmail = email;
+      }
+      const result = await mealsReviewsCollection
+        .find(query)
+        .sort({ createdAt: -1 })
+        .toArray();
+      res.send(result);
+    });
     app.post("/meals-reviews", async (req, res) => {
-      const { mealId, userName, userEmail, UserPhoto, text, rating } = req.body;
+      const { mealId, mealName, userName, userEmail, UserPhoto, text, rating } =
+        req.body;
       if (!mealId || !text || !rating) {
         return res.status(400).send({ message: "Invalid review data" });
       }
       // const formattedDate = dayjs().format("MMM D, YYYY h:mm A");
       const UserReviews = {
         mealId: new ObjectId(mealId),
+        mealName,
         userName,
         userEmail,
         UserPhoto,
@@ -155,8 +175,11 @@ async function run() {
       res.send(result);
     });
     app.get("/favorites", async (req, res) => {
-      const favorite = req.query;
+      const { email } = req.query;
       const query = {};
+      if (email) {
+        query.userEmail = email;
+      }
       const cursor = favoritesCollection.find(query).sort({ createdAt: -1 });
       const result = await cursor.toArray();
       res.send(result);
