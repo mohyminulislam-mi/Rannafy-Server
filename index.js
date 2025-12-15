@@ -105,15 +105,13 @@ async function run() {
     });
     // Meals data from MongoDB
     app.get("/meals", async (req, res) => {
-      const mealsProduct = req.query;
+      const { email } = req.query;
       const query = {};
-      try {
-        const cursor = mealsCollection.find(query);
-        const result = await cursor.toArray();
-        res.send(result);
-      } catch (error) {
-        res.send(error);
+      if (email) {
+        query.chefEmail = email;
       }
+      const result = await mealsCollection.find(query).toArray();
+      res.send(result);
     });
     // latest meals for home page
     app.get("/latest-meals", async (req, res) => {
@@ -133,6 +131,13 @@ async function run() {
       console.log("result", result);
       res.send(result);
     });
+    app.delete("/meals/:id", async (req, res) => {
+      const { id } = req.params;
+      const query = { _id: new ObjectId(id) };
+      const result = await mealsCollection.deleteOne(query);
+      res.send(result);
+    });
+
     // user reviews for single meals
     // get reviews apis
     app.get("/meals-reviews/:mealId", async (req, res) => {
@@ -174,6 +179,12 @@ async function run() {
       const result = await mealsReviewsCollection.insertOne(UserReviews);
       res.send(result);
     });
+    app.delete("/meals-reviews/:id", async (req, res) => {
+      const { id } = req.params;
+      const query = { _id: new ObjectId(id) };
+      const result = await mealsReviewsCollection.deleteOne(query);
+      res.send(result);
+    });
     app.get("/favorites", async (req, res) => {
       const { email } = req.query;
       const query = {};
@@ -205,21 +216,34 @@ async function run() {
       const result = await favoritesCollection.insertOne(favorite);
       res.send({ message: "Added successfully", result });
     });
+    app.delete("/favorites/:id", async (req, res) => {
+      const { id } = req.params;
+      const query = { _id: new ObjectId(id) };
+      const result = await favoritesCollection.deleteOne(query);
+      res.send(result);
+    });
     // order data from UI
     app.get("/orders", async (req, res) => {
-      const { email } = req.query;
+      const { email, mealId, chefId } = req.query;
       const query = {};
       if (email) {
         query.userEmail = email;
       }
+      if (mealId) {
+        query.mealId = new ObjectId(mealId);
+      }
+
+      if (chefId) {
+        query.chefId = chefId;
+      }
+
       const result = await ordersCollection.find(query).toArray();
       res.send(result);
     });
     app.get("/orders/:id", async (req, res) => {
-      const id = req.params.id;
-      const query = {};
-      const cursor = ordersCollection.find(query);
-      const result = await cursor.toArray();
+      const { id } = req.params;
+      const query = { _id: new ObjectId(id) };
+      const result = await ordersCollection.find(query).toArray();
       res.send(result);
     });
     // order data post data
