@@ -44,12 +44,21 @@ async function run() {
         query.email = email;
       }
       try {
-        const cursor = usersCollection.find(query);
+        const cursor = usersCollection.find(query).sort({ createdAt: -1 });
         const result = await cursor.toArray();
         res.send(result);
       } catch (error) {
         res.send(error);
       }
+    });
+    app.get("/users/email", async (req, res) => {
+      const email = req.query.email;
+      const query = {};
+      if (email) {
+        query.email = email;
+      }
+      const result = await usersCollection.findOne(query);
+      res.send(result);
     });
     app.post("/users", async (req, res) => {
       const user = req.body;
@@ -65,6 +74,16 @@ async function run() {
       const result = await usersCollection.insertOne(user);
       console.log("result", result);
 
+      res.send(result);
+    });
+    app.patch("/users/:id", async (req, res) => {
+      const id = req.params.id;
+      const updatedData = req.body;
+      const query = { _id: new ObjectId(id) };
+      const updateDoc = {
+        $set: updatedData,
+      };
+      const result = await usersCollection.updateOne(query, updateDoc);
       res.send(result);
     });
     // requests
@@ -137,6 +156,16 @@ async function run() {
       const result = await mealsCollection.deleteOne(query);
       res.send(result);
     });
+    app.patch("/meals/:id", async (req, res) => {
+      const id = req.params.id;
+      const updatedData = req.body;
+      const query = { _id: new ObjectId(id) };
+      const updateDoc = {
+        $set: updatedData,
+      };
+      const result = await mealsCollection.updateOne(query, updateDoc);
+      res.send(result);
+    });
 
     // user reviews for single meals
     // get reviews apis
@@ -183,6 +212,16 @@ async function run() {
       const { id } = req.params;
       const query = { _id: new ObjectId(id) };
       const result = await mealsReviewsCollection.deleteOne(query);
+      res.send(result);
+    });
+    app.patch("/meals-reviews/:id", async (req, res) => {
+      const id = req.params.id;
+      const updatedData = req.body;
+      const query = { _id: new ObjectId(id) };
+      const updateDoc = {
+        $set: updatedData,
+      };
+      const result = await mealsReviewsCollection.updateOne(query, updateDoc);
       res.send(result);
     });
     app.get("/favorites", async (req, res) => {
@@ -237,7 +276,10 @@ async function run() {
         query.chefId = chefId;
       }
 
-      const result = await ordersCollection.find(query).toArray();
+      const result = await ordersCollection
+        .find(query)
+        .sort({ orderTime: -1 })
+        .toArray();
       res.send(result);
     });
     app.get("/orders/:id", async (req, res) => {
