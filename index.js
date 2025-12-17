@@ -2,7 +2,7 @@
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
-const dayjs = require("dayjs");
+// const stripe = require("stripe")(`${process.env.STRIPE_KEY}`);
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 // Create app
@@ -60,6 +60,12 @@ async function run() {
       const result = await usersCollection.findOne(query);
       res.send(result);
     });
+    app.get("/users/:email/role", async (req, res) => {
+      const email = req.params.email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+      res.send({ role: user?.role || "user" });
+    });
     app.post("/users", async (req, res) => {
       const user = req.body;
       user.role = "user";
@@ -83,8 +89,10 @@ async function run() {
       const updateDoc = {
         $set: updatedData,
       };
-      const result = await usersCollection.updateOne(query, updateDoc);
-      res.send(result);
+      try {
+        const result = await usersCollection.updateOne(query, updateDoc);
+        res.send(result);
+      } catch {}
     });
     // requests
     app.post("/requests", async (req, res) => {
@@ -291,14 +299,56 @@ async function run() {
     // order data post data
     app.post("/orders", async (req, res) => {
       const orders = req.body;
-      console.log(orders);
-
       orders.mealId = new ObjectId(orders.mealId);
       orders.orderTime = new Date();
       orders.orderStatus = "pending";
       orders.paymentStatus = "pending";
       const result = await ordersCollection.insertOne(orders);
       res.send(result);
+    });
+    app.patch("/orders/:id", async (req, res) => {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      const order = await ordersCollection.findOne({
+        _id: new ObjectId(id),
+      });
+
+      if (!order) {
+        return res.send({ message: "Order not found" });
+      }
+
+      let updateDoc = {};
+
+      // 👉 ACCEPT
+      if (status === "accepted") {
+        updateDoc = {
+          orderStatus: "accepted",
+          paymentStatus: "pay",
+        };
+      }
+
+      // 👉 CANCEL
+      if (status === "cancelled") {
+        updateDoc = {
+          orderStatus: "cancelled",
+          paymentStatus: "cancelled",
+        };
+      }
+
+      // 👉 DELIVER (payment already done)
+      if (status === "delivered") {
+        updateDoc = {
+          orderStatus: "delivered",
+        };
+      }
+
+      await ordersCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updateDoc }
+      );
+
+      res.send({ success: true });
     });
 
     // Send a ping to confirm a successful connection
