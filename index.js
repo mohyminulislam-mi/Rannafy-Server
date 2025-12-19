@@ -36,6 +36,18 @@ async function run() {
     const ordersCollection = database.collection("orders");
     const paymentCollection = database.collection("payments");
 
+    const getNextChefId = async () => {
+      const counter = await database
+        .collection("counters")
+        .findOneAndUpdate(
+          { _id: "chefId" },
+          { $inc: { seq: 1 } },
+          { returnDocument: "after", upsert: true }
+        );
+
+      const number = String(counter.value.seq).padStart(3, "0");
+      return `CHEF_${number}`;
+    };
     // users data into Database
     // get user from database
     app.get("/users", async (req, res) => {
@@ -133,29 +145,60 @@ async function run() {
       res.send(result);
     });
     app.patch("/requests/:id", async (req, res) => {
-      const id = req.params.id;
-      const updatedData = req.body;
-      const query = { _id: new ObjectId(id) };
-      const updateDoc = {
-        $set: updatedData,
-      };
-      const result = await requestsCollection.findOneAndUpdate(
-        query,
-        updateDoc,
-        { returnDocument: "after" }
-      );
-      const userQuery = { email: result.userEmail };
+      try {
+        const requestId = req.params.id;
+        const { action } = req.body;
 
-      const updateRoleType = {
-        $set: {
-          role: result.requestType,
-        },
-      };
-      const updateRole = await usersCollection.updateOne(
-        userQuery,
-        updateRoleType
-      );
-      res.send(updateRole);
+        const requestQuery = { _id: new ObjectId(requestId) };
+        const request = await requestsCollection.findOne(requestQuery);
+
+        if (!request) {
+          return res.status(404).send({ message: "Request not found" });
+        }
+
+        if (request.requestStatus !== "pending") {
+          return res.send({ message: "Already processed" });
+        }
+
+        // reject
+        if (action === "reject") {
+          const result = await requestsCollection.updateOne(requestQuery, {
+            $set: { requestStatus: "rejected" },
+          });
+
+          return res.send({ success: true, type: "rejected", result });
+        }
+
+        // accept
+        if (action === "accept") {
+          const userQuery = { _id: new ObjectId(request.userId) };
+
+          if (request.requestType === "chef") {
+            const chefId = await getNextChefId();
+
+            await usersCollection.updateOne(userQuery, {
+              $set: {
+                role: "chef",
+                chefId,
+              },
+            });
+          }
+
+          if (request.requestType === "admin") {
+            await usersCollection.updateOne(userQuery, {
+              $set: { role: "admin" },
+            });
+          }
+
+          const result = await requestsCollection.updateOne(requestQuery, {
+            $set: { requestStatus: "approved" },
+          });
+
+          return res.send({ success: true, type: "approved", result });
+        }
+      } catch (error) {
+        res.status(500).send({ error: error.message });
+      }
     });
     // Meals data from MongoDB
     app.get("/meals", async (req, res) => {
