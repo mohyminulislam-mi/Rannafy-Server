@@ -58,17 +58,17 @@ async function run() {
     const requestsCollection = database.collection("requests");
     const ordersCollection = database.collection("orders");
     const paymentCollection = database.collection("payments");
+    const counterCollection = database.collection("counters");
 
     const getNextChefId = async () => {
-      const counter = await database
-        .collection("counters")
-        .findOneAndUpdate(
-          { _id: "chefId" },
-          { $inc: { seq: 1 } },
-          { returnDocument: "after", upsert: true }
-        );
-
-      const number = String(counter.value.seq).padStart(3, "0");
+      const chefPera = await counterCollection.findOne({ _id: "chefId" });
+      chefPera.seq = chefPera.seq + 1;
+      const counter = await counterCollection.updateOne(
+        { _id: "chefId" },
+        { $set: chefPera }
+      );
+      console.log("counter", counter);
+      const number = String(chefPera.seq).padStart(3, "0");
       return `CHEF_${number}`;
     };
     // must be used after verifyFBToken middleware
@@ -191,64 +191,67 @@ async function run() {
         .toArray();
       res.send(result);
     });
+
     app.patch(
       "/requests/:id",
       verifyFirebaseToken,
       verifyAdmin,
       async (req, res) => {
-        try {
-          const requestId = req.params.id;
-          const { action } = req.body;
+        const requestId = req.params.id;
+        const { action } = req.body;
 
-          const requestQuery = { _id: new ObjectId(requestId) };
-          const request = await requestsCollection.findOne(requestQuery);
+        const requestQuery = { _id: new ObjectId(requestId) };
+        const request = await requestsCollection.findOne(requestQuery);
 
-          if (!request) {
-            return res.status(404).send({ message: "Request not found" });
-          }
+        console.log("request", request);
 
-          if (request.requestStatus !== "pending") {
-            return res.send({ message: "Already processed" });
-          }
+        if (!request) {
+          return res.status(404).send({ message: "Request not found" });
+        }
 
-          // reject
-          if (action === "reject") {
-            const result = await requestsCollection.updateOne(requestQuery, {
-              $set: { requestStatus: "rejected" },
+        if (request.requestStatus !== "pending") {
+          return res.send({ message: "Already processed" });
+        }
+
+        // reject
+        if (action === "reject") {
+          const result = await requestsCollection.updateOne(requestQuery, {
+            $set: { requestStatus: "rejected" },
+          });
+
+          return res.send({ success: true, type: "rejected", result });
+        }
+
+        // accept
+        if (action === "accept") {
+          const userQuery = { email: request.userEmail };
+          // const user = await usersCollection.findOne(userQuery);
+
+          // console.log(user);
+          if (request.requestType === "chef") {
+            const chefId = await getNextChefId();
+
+            console.log("chefId", chefId, userQuery);
+
+            await usersCollection.updateOne(userQuery, {
+              $set: {
+                role: "chef",
+                chefId,
+              },
             });
-
-            return res.send({ success: true, type: "rejected", result });
           }
 
-          // accept
-          if (action === "accept") {
-            const userQuery = { _id: new ObjectId(request.userId) };
-
-            if (request.requestType === "chef") {
-              const chefId = await getNextChefId();
-
-              await usersCollection.updateOne(userQuery, {
-                $set: {
-                  role: "chef",
-                  chefId,
-                },
-              });
-            }
-
-            if (request.requestType === "admin") {
-              await usersCollection.updateOne(userQuery, {
-                $set: { role: "admin" },
-              });
-            }
-
-            const result = await requestsCollection.updateOne(requestQuery, {
-              $set: { requestStatus: "approved" },
+          if (request.requestType === "admin") {
+            await usersCollection.updateOne(userQuery, {
+              $set: { role: "admin" },
             });
-
-            return res.send({ success: true, type: "approved", result });
           }
-        } catch (error) {
-          res.status(500).send({ error: error.message });
+
+          const result = await requestsCollection.updateOne(requestQuery, {
+            $set: { requestStatus: "approved" },
+          });
+
+          return res.send({ success: true, type: "approved", result });
         }
       }
     );
