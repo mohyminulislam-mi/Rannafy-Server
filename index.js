@@ -152,6 +152,40 @@ async function run() {
         res.send(result);
       }
     );
+    app.get(
+      "/admin-stats",
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const orders = await ordersCollection.find().toArray();
+        const users = await usersCollection.find().toArray();
+
+        const paidOrders = orders.filter((o) => o.paymentStatus === "paid");
+
+        const totalPayment = paidOrders.reduce(
+          (sum, o) => sum + o.price * Number(o.quantity),
+          0
+        );
+
+        const deliveredOrders = orders.filter(
+          (o) => o.orderStatus === "delivered"
+        ).length;
+
+        const pendingOrders = orders.filter(
+          (o) => o.orderStatus !== "delivered"
+        ).length;
+
+        console.log(totalPayment, deliveredOrders, pendingOrders);
+
+        res.send({
+          totalPayment,
+          totalUsers: users.length,
+          deliveredOrders,
+          pendingOrders,
+        });
+      }
+    );
+
     // requests
     app.post("/requests", async (req, res) => {
       try {
@@ -257,14 +291,47 @@ async function run() {
     );
     // Meals data from MongoDB
     app.get("/meals", async (req, res) => {
-      const { email } = req.query;
-      const query = {};
-      if (email) {
-        query.chefEmail = email;
+      try {
+        const { search = "", sort = "none", page = 1, limit = 8 } = req.query;
+
+        const query = {};
+
+        // Search
+        if (search) {
+          query = {
+            $or: [
+              { chefName: { $regex: search, $options: "i" } },
+              { chefId: { $regex: search, $options: "i" } },
+            ],
+          };
+        }
+
+        // Sort
+        let sortQuery = {};
+        if (sort === "low") sortQuery.price = 1;
+        if (sort === "high") sortQuery.price = -1;
+
+        // page
+        const skip = (Number(page) - 1) * Number(limit);
+
+        const meals = await mealsCollection
+          .find(query)
+          .sort(sortQuery)
+          .skip(skip)
+          .limit(Number(limit))
+          .toArray();
+
+        const total = await mealsCollection.countDocuments(query);
+
+        res.send({
+          meals,
+          total,
+        });
+      } catch (error) {
+        res.status(500).send({ message: "Server error" });
       }
-      const result = await mealsCollection.find(query).toArray();
-      res.send(result);
     });
+
     // latest meals for home page
     app.get("/latest-meals", async (req, res) => {
       const cursor = mealsCollection.find().limit(8).sort({ createdAt: -1 });
