@@ -4,6 +4,12 @@ const cors = require("cors");
 require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const stripe = require("stripe")(`${process.env.STRIPE_KEY}`);
+// firebase-admin auth
+const admin = require("firebase-admin");
+const serviceAccount = require("./rannafy-firebase-adminsdk.json");
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 
 // Create app
 const app = express();
@@ -12,6 +18,23 @@ const port = process.env.PORT || 3000;
 //Middleware
 app.use(express.json());
 app.use(cors());
+
+// jwt verifactions
+const verifyFirebaseToken = async (req, res, next) => {
+  const token = req.headers.authorization;
+  if (!token) {
+    return res.status(401).send({ message: "Unauthorised access" });
+  }
+
+  try {
+    const idToken = token.split(" ")[1];
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    req.decoded_email = decoded.email;
+    next();
+  } catch (err) {
+    return res.status(401).send({ message: "Unauthorised access" });
+  }
+};
 
 const uri = `mongodb+srv://${process.env.DB_NAME}:${process.env.DB_PASS}@mohyminulislam.uwhwdlk.mongodb.net/?appName=Mohyminulislam`;
 
@@ -48,9 +71,28 @@ async function run() {
       const number = String(counter.value.seq).padStart(3, "0");
       return `CHEF_${number}`;
     };
+    // must be used after verifyFBToken middleware
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded_email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+      if (!user || user.role !== "admin") {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+      next();
+    };
+    const verifyChef = async (req, res, next) => {
+      const email = req.decoded_email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+      if (!user || user.role !== "chef") {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+      next();
+    };
     // users data into Database
     // get user from database
-    app.get("/users", async (req, res) => {
+    app.get("/users", verifyFirebaseToken, verifyAdmin, async (req, res) => {
       const email = req.query.email;
       const query = {};
       if (email) {
@@ -64,7 +106,7 @@ async function run() {
         res.send(error);
       }
     });
-    app.get("/users/email", async (req, res) => {
+    app.get("/users/email", verifyFirebaseToken, async (req, res) => {
       const email = req.query.email;
       const query = {};
       if (email) {
@@ -73,7 +115,7 @@ async function run() {
       const result = await usersCollection.findOne(query);
       res.send(result);
     });
-    app.get("/users/:email/role", async (req, res) => {
+    app.get("/users/:email/role", verifyFirebaseToken, async (req, res) => {
       const email = req.params.email;
       const query = { email };
       const user = await usersCollection.findOne(query);
@@ -95,16 +137,21 @@ async function run() {
 
       res.send(result);
     });
-    app.patch("/users/:id", async (req, res) => {
-      const id = req.params.id;
-      const updatedData = req.body;
-      const query = { _id: new ObjectId(id) };
-      const updateDoc = {
-        $set: updatedData,
-      };
-      const result = await usersCollection.updateOne(query, updateDoc);
-      res.send(result);
-    });
+    app.patch(
+      "/users/:id",
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const updatedData = req.body;
+        const query = { _id: new ObjectId(id) };
+        const updateDoc = {
+          $set: updatedData,
+        };
+        const result = await usersCollection.updateOne(query, updateDoc);
+        res.send(result);
+      }
+    );
     // requests
     app.post("/requests", async (req, res) => {
       try {
@@ -132,7 +179,7 @@ async function run() {
       }
     });
     // get request
-    app.get("/requests", async (req, res) => {
+    app.get("/requests", verifyFirebaseToken, verifyAdmin, async (req, res) => {
       const { email } = req.query;
       const query = {};
       if (email) {
@@ -144,62 +191,67 @@ async function run() {
         .toArray();
       res.send(result);
     });
-    app.patch("/requests/:id", async (req, res) => {
-      try {
-        const requestId = req.params.id;
-        const { action } = req.body;
+    app.patch(
+      "/requests/:id",
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const requestId = req.params.id;
+          const { action } = req.body;
 
-        const requestQuery = { _id: new ObjectId(requestId) };
-        const request = await requestsCollection.findOne(requestQuery);
+          const requestQuery = { _id: new ObjectId(requestId) };
+          const request = await requestsCollection.findOne(requestQuery);
 
-        if (!request) {
-          return res.status(404).send({ message: "Request not found" });
-        }
-
-        if (request.requestStatus !== "pending") {
-          return res.send({ message: "Already processed" });
-        }
-
-        // reject
-        if (action === "reject") {
-          const result = await requestsCollection.updateOne(requestQuery, {
-            $set: { requestStatus: "rejected" },
-          });
-
-          return res.send({ success: true, type: "rejected", result });
-        }
-
-        // accept
-        if (action === "accept") {
-          const userQuery = { _id: new ObjectId(request.userId) };
-
-          if (request.requestType === "chef") {
-            const chefId = await getNextChefId();
-
-            await usersCollection.updateOne(userQuery, {
-              $set: {
-                role: "chef",
-                chefId,
-              },
-            });
+          if (!request) {
+            return res.status(404).send({ message: "Request not found" });
           }
 
-          if (request.requestType === "admin") {
-            await usersCollection.updateOne(userQuery, {
-              $set: { role: "admin" },
-            });
+          if (request.requestStatus !== "pending") {
+            return res.send({ message: "Already processed" });
           }
 
-          const result = await requestsCollection.updateOne(requestQuery, {
-            $set: { requestStatus: "approved" },
-          });
+          // reject
+          if (action === "reject") {
+            const result = await requestsCollection.updateOne(requestQuery, {
+              $set: { requestStatus: "rejected" },
+            });
 
-          return res.send({ success: true, type: "approved", result });
+            return res.send({ success: true, type: "rejected", result });
+          }
+
+          // accept
+          if (action === "accept") {
+            const userQuery = { _id: new ObjectId(request.userId) };
+
+            if (request.requestType === "chef") {
+              const chefId = await getNextChefId();
+
+              await usersCollection.updateOne(userQuery, {
+                $set: {
+                  role: "chef",
+                  chefId,
+                },
+              });
+            }
+
+            if (request.requestType === "admin") {
+              await usersCollection.updateOne(userQuery, {
+                $set: { role: "admin" },
+              });
+            }
+
+            const result = await requestsCollection.updateOne(requestQuery, {
+              $set: { requestStatus: "approved" },
+            });
+
+            return res.send({ success: true, type: "approved", result });
+          }
+        } catch (error) {
+          res.status(500).send({ error: error.message });
         }
-      } catch (error) {
-        res.status(500).send({ error: error.message });
       }
-    });
+    );
     // Meals data from MongoDB
     app.get("/meals", async (req, res) => {
       const { email } = req.query;
@@ -216,45 +268,55 @@ async function run() {
       const result = await cursor.toArray();
       res.send(result);
     });
-    app.get("/meals/:id", async (req, res) => {
+    app.get("/meals/:id", verifyFirebaseToken, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await mealsCollection.findOne(query);
       res.send(result);
     });
-    app.post("/meals", async (req, res) => {
+    app.post("/meals", verifyFirebaseToken, verifyChef, async (req, res) => {
       const meal = req.body;
       const result = await mealsCollection.insertOne(meal);
       console.log("result", result);
       res.send(result);
     });
-    app.delete("/meals/:id", async (req, res) => {
-      const { id } = req.params;
-      const query = { _id: new ObjectId(id) };
-      const result = await mealsCollection.deleteOne(query);
-      res.send(result);
-    });
-    app.patch("/meals/:id", async (req, res) => {
-      const id = req.params.id;
-      const updatedData = req.body;
-      const query = { _id: new ObjectId(id) };
-      const updateDoc = {
-        $set: updatedData,
-      };
-      const result = await mealsCollection.updateOne(query, updateDoc);
-      res.send(result);
-    });
+    app.delete(
+      "/meals/:id",
+      verifyFirebaseToken,
+      verifyChef,
+      async (req, res) => {
+        const { id } = req.params;
+        const query = { _id: new ObjectId(id) };
+        const result = await mealsCollection.deleteOne(query);
+        res.send(result);
+      }
+    );
+    app.patch(
+      "/meals/:id",
+      verifyFirebaseToken,
+      verifyChef,
+      async (req, res) => {
+        const id = req.params.id;
+        const updatedData = req.body;
+        const query = { _id: new ObjectId(id) };
+        const updateDoc = {
+          $set: updatedData,
+        };
+        const result = await mealsCollection.updateOne(query, updateDoc);
+        res.send(result);
+      }
+    );
 
     // user reviews for single meals
     // get reviews apis
-    app.get("/meals-reviews/:mealId", async (req, res) => {
+    app.get("/meals-reviews/:mealId", verifyFirebaseToken, async (req, res) => {
       const mealId = req.params.mealId;
       const query = { mealId: new ObjectId(mealId) };
       const cursor = mealsReviewsCollection.find(query).sort({ createdAt: -1 });
       const result = await cursor.toArray();
       res.send(result);
     });
-    app.get("/meals-reviews", async (req, res) => {
+    app.get("/meals-reviews", verifyFirebaseToken, async (req, res) => {
       const { email } = req.query;
       const query = {};
       if (email) {
@@ -286,13 +348,13 @@ async function run() {
       const result = await mealsReviewsCollection.insertOne(UserReviews);
       res.send(result);
     });
-    app.delete("/meals-reviews/:id", async (req, res) => {
+    app.delete("/meals-reviews/:id", verifyFirebaseToken, async (req, res) => {
       const { id } = req.params;
       const query = { _id: new ObjectId(id) };
       const result = await mealsReviewsCollection.deleteOne(query);
       res.send(result);
     });
-    app.patch("/meals-reviews/:id", async (req, res) => {
+    app.patch("/meals-reviews/:id", verifyFirebaseToken, async (req, res) => {
       const id = req.params.id;
       const updatedData = req.body;
       const query = { _id: new ObjectId(id) };
@@ -302,7 +364,7 @@ async function run() {
       const result = await mealsReviewsCollection.updateOne(query, updateDoc);
       res.send(result);
     });
-    app.get("/favorites", async (req, res) => {
+    app.get("/favorites", verifyFirebaseToken, async (req, res) => {
       const { email } = req.query;
       const query = {};
       if (email) {
@@ -333,14 +395,14 @@ async function run() {
       const result = await favoritesCollection.insertOne(favorite);
       res.send({ message: "Added successfully", result });
     });
-    app.delete("/favorites/:id", async (req, res) => {
+    app.delete("/favorites/:id", verifyFirebaseToken, async (req, res) => {
       const { id } = req.params;
       const query = { _id: new ObjectId(id) };
       const result = await favoritesCollection.deleteOne(query);
       res.send(result);
     });
     // order data from UI
-    app.get("/orders", async (req, res) => {
+    app.get("/orders", verifyFirebaseToken, async (req, res) => {
       const { email, mealId, chefId } = req.query;
       const query = {};
       if (email) {
@@ -360,7 +422,7 @@ async function run() {
         .toArray();
       res.send(result);
     });
-    app.get("/orders/:id", async (req, res) => {
+    app.get("/orders/:id", verifyFirebaseToken, async (req, res) => {
       const { id } = req.params;
       const query = { _id: new ObjectId(id) };
       const result = await ordersCollection.find(query).toArray();
@@ -376,50 +438,55 @@ async function run() {
       const result = await ordersCollection.insertOne(orders);
       res.send(result);
     });
-    app.patch("/orders/:id", async (req, res) => {
-      const { id } = req.params;
-      const { status } = req.body;
+    app.patch(
+      "/orders/:id",
+      verifyFirebaseToken,
+      verifyChef,
+      async (req, res) => {
+        const { id } = req.params;
+        const { status } = req.body;
 
-      const order = await ordersCollection.findOne({
-        _id: new ObjectId(id),
-      });
+        const order = await ordersCollection.findOne({
+          _id: new ObjectId(id),
+        });
 
-      if (!order) {
-        return res.send({ message: "Order not found" });
+        if (!order) {
+          return res.send({ message: "Order not found" });
+        }
+
+        let updateDoc = {};
+
+        // accepted
+        if (status === "accepted") {
+          updateDoc = {
+            orderStatus: "accepted",
+            paymentStatus: "payment",
+          };
+        }
+
+        // cancelled
+        if (status === "cancelled") {
+          updateDoc = {
+            orderStatus: "cancelled",
+            paymentStatus: "cancelled",
+          };
+        }
+
+        //  delivered
+        if (status === "delivered") {
+          updateDoc = {
+            orderStatus: "delivered",
+          };
+        }
+
+        await ordersCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateDoc }
+        );
+
+        res.send({ success: true });
       }
-
-      let updateDoc = {};
-
-      // accepted
-      if (status === "accepted") {
-        updateDoc = {
-          orderStatus: "accepted",
-          paymentStatus: "payment",
-        };
-      }
-
-      // cancelled
-      if (status === "cancelled") {
-        updateDoc = {
-          orderStatus: "cancelled",
-          paymentStatus: "cancelled",
-        };
-      }
-
-      //  delivered
-      if (status === "delivered") {
-        updateDoc = {
-          orderStatus: "delivered",
-        };
-      }
-
-      await ordersCollection.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: updateDoc }
-      );
-
-      res.send({ success: true });
-    });
+    );
 
     //Stripe payment option setup
     app.post("/create-checkout-session", async (req, res) => {
