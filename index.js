@@ -49,7 +49,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
     const database = client.db("RannaFy");
     const usersCollection = database.collection("users");
     const mealsCollection = database.collection("meals");
@@ -292,26 +292,31 @@ async function run() {
     // Meals data from MongoDB
     app.get("/meals", async (req, res) => {
       try {
-        const { search = "", sort = "none", page = 1, limit = 8 } = req.query;
+        const {
+          search = "",
+          sort = "none",
+          page = 1,
+          limit = 10,
+          email,
+        } = req.query;
 
-        const query = {};
+        let query = {};
 
-        // Search
-        if (search) {
-          query = {
-            $or: [
-              { chefName: { $regex: search, $options: "i" } },
-              { chefId: { $regex: search, $options: "i" } },
-            ],
-          };
+        if (email) {
+          query.chefEmail = email;
         }
 
-        // Sort
+        if (search) {
+          query.$or = [
+            { chefName: { $regex: search, $options: "i" } },
+            { chefId: { $regex: search, $options: "i" } },
+          ];
+        }
+
         let sortQuery = {};
         if (sort === "low") sortQuery.price = 1;
         if (sort === "high") sortQuery.price = -1;
 
-        // page
         const skip = (Number(page) - 1) * Number(limit);
 
         const meals = await mealsCollection
@@ -345,11 +350,32 @@ async function run() {
       res.send(result);
     });
     app.post("/meals", verifyFirebaseToken, verifyChef, async (req, res) => {
-      const meal = req.body;
-      const result = await mealsCollection.insertOne(meal);
-      console.log("result", result);
-      res.send(result);
+      try {
+        const meal = req.body;
+
+        const user = await usersCollection.findOne({
+          email: req.user.email,
+        });
+
+        if (!user) {
+          return res.status(404).send({ message: "User not found" });
+        }
+
+        if (user.userStatus === "fraud") {
+          return res.status(403).send({
+            message: "You are a fraud user. You cannot add meals.",
+          });
+        }
+
+        meal.createdAt = new Date();
+        const result = await mealsCollection.insertOne(meal);
+
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Failed to create meal" });
+      }
     });
+
     app.delete(
       "/meals/:id",
       verifyFirebaseToken,
@@ -396,6 +422,14 @@ async function run() {
         .find(query)
         .sort({ createdAt: -1 })
         .toArray();
+      res.send(result);
+    });
+    app.get("/latest-reviews", async (req, res) => {
+      const cursor = mealsReviewsCollection
+        .find()
+        .limit(8)
+        .sort({ createdAt: -1 });
+      const result = await cursor.toArray();
       res.send(result);
     });
     app.post("/meals-reviews", async (req, res) => {
@@ -500,14 +534,32 @@ async function run() {
     });
     // order data post data
     app.post("/orders", async (req, res) => {
-      const orders = req.body;
-      orders.mealId = new ObjectId(orders.mealId);
-      orders.orderTime = new Date();
-      orders.orderStatus = "pending";
-      orders.paymentStatus = "pending";
-      const result = await ordersCollection.insertOne(orders);
-      res.send(result);
+      try {
+        const orders = req.body;
+        const user = await usersCollection.findOne({ email: orders.email });
+
+        if (!user) {
+          return res.status(404).send({ message: "User not found" });
+        }
+
+        if (user.userStatus === "fraud") {
+          return res.status(403).send({
+            message: "You are marked as a fraud user. You cannot place orders.",
+          });
+        }
+        //  normal user order
+        orders.mealId = new ObjectId(orders.mealId);
+        orders.orderTime = new Date();
+        orders.orderStatus = "pending";
+        orders.paymentStatus = "pending";
+
+        const result = await ordersCollection.insertOne(orders);
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Something went wrong" });
+      }
     });
+
     app.patch(
       "/orders/:id",
       verifyFirebaseToken,
@@ -670,7 +722,7 @@ async function run() {
     });
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
+    // await client.db("admin").command({ ping: 1 });
     console.log("✅ Successfully connected to MongoDB!");
   } finally {
     // Ensures that the client will close when you finish/error
