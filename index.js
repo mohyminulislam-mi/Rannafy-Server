@@ -49,7 +49,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    // await client.connect();
+    await client.connect();
     const database = client.db("RannaFy");
     const usersCollection = database.collection("users");
     const mealsCollection = database.collection("meals");
@@ -349,29 +349,22 @@ async function run() {
       const result = await mealsCollection.findOne(query);
       res.send(result);
     });
-    app.post("/meals", verifyFirebaseToken, verifyChef, async (req, res) => {
+
+    app.post("/meals", async (req, res) => {
       try {
         const meal = req.body;
 
-        const user = await usersCollection.findOne({
-          email: req.user.email,
-        });
-
-        if (!user) {
-          return res.status(404).send({ message: "User not found" });
-        }
-
-        if (user.userStatus === "fraud") {
-          return res.status(403).send({
-            message: "You are a fraud user. You cannot add meals.",
-          });
-        }
-
         meal.createdAt = new Date();
+
         const result = await mealsCollection.insertOne(meal);
 
-        res.send(result);
+        res.status(201).send({
+          success: true,
+          message: "Meal added successfully",
+          insertedId: result.insertedId,
+        });
       } catch (error) {
+        console.error(error);
         res.status(500).send({ message: "Failed to create meal" });
       }
     });
@@ -722,7 +715,7 @@ async function run() {
     });
 
     // Send a ping to confirm a successful connection
-    // await client.db("admin").command({ ping: 1 });
+    await client.db("admin").command({ ping: 1 });
     console.log("✅ Successfully connected to MongoDB!");
   } finally {
     // Ensures that the client will close when you finish/error
